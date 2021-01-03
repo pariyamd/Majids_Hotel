@@ -1,6 +1,7 @@
 # Majids_Hotel
-a flex dashboard in R for analyzing and illustrating Hotel's info and residence state. you can also use this dashboard to predict price per night, using a pre-trained model 
+a flex dashboard in R for analyzing and illustrating Hotel's info and residence state. you can also use this dashboard to predict price per night, using a pre-trained model.
 
+you can also check-out the app using this [link](https://pariya-md.shinyapps.io/MajidsHotel/).
 
 
 ## This shiny App consists of three parts:
