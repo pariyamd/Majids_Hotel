@@ -1,0 +1,130 @@
+---
+title: "Majids Hotel"
+
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: scroll
+    
+runtime: shiny
+---
+
+```{r global, include=FALSE}
+# devtools::install_github("jcheng5/bubbles")
+library(flexdashboard)
+library(data.table)
+library(lubridate)
+library(ggplot2)
+library(stringr)
+library(bubbles)
+library(shiny)
+library(h2o)
+h2o.init()
+h2o.no_progress()
+price_model<-h2o.loadModel("leader_model/GBM_grid__1_AutoML_20201104_231238_model_1")
+
+hotel_data=read.csv("~/Downloads/data.csv")
+rooms<-as.data.table(hotel_data)
+rooms<-rooms[ , room_cat :=str_extract(room_type_code,"[A-Z]")]
+rooms[room_cat=='A',color:="#009e8e"]
+rooms[room_cat=='C',color:="#4DB3E6"]
+rooms[room_cat=='D',color:="#296987"]
+rooms[is.na(color), color := "#333333"]
+
+hotel_data<-as.data.table(hotel_data)
+price_per_month=rooms[ , .(room_price_mean=mean(price_pernight)) , by=.(ymd(check_in_date),room_cat)]
+guests_per_month=rooms[, .N , by=.(ymd(check_in_date),room_cat)]
+price_per_month=na.omit(price_per_month)
+guests_per_month=na.omit(guests_per_month)
+price_demand=merge(guests_per_month,price_per_month)
+  
+```
+
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+### Choose a Date to See Hotel Residence situation
+
+```{r,cache=FALSE}
+dateInput("date1", "Date:", value = "2013-07-07",min="2013-07-01",max="2015-02-20")
+```
+
+### Compare Demand and Price per Room during a Period
+```{r,cache=FALSE}
+checkboxGroupInput("room_cb", "Room Type:",c("A"="A","C"="C","D"="D"), selected="A")
+dateRangeInput("daterange", "Date range:",
+                 start  = "2013-07-07",
+                 end    = "2013-12-31",
+                 min    = "2013-07-01",
+                 max    = "2015-02-20",
+                 separator = " - ")
+```
+
+### Price Predictor
+```{r,cache=FALSE}
+dateInput("checkin", "check in date:", value = "2013-07-07",min="2013-07-01",max="2015-02-20")
+dateInput("checkout", "check out date:", value = "2013-07-07",min="2013-07-01",max="2015-02-20")
+dateInput("booking", "booking date:", value = "2013-07-07",min="2013-07-01",max="2015-02-20")
+selectInput("roomtype","room type:",
+              list('A' = list("A1","A2","A3","A4"),
+           'C'= list("C1", "C2", "C3","C4"),
+           'D' = list("D1", "D2", "D3")))
+numericInput("stay","stay duration:",1,min=1,max=10)
+
+```
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+### Hotel Residence
+
+```{r,out.height='100%',cache=FALSE}
+capture<-reactive({
+    hotel_capture<-rooms[check_in_date<=input$date1 & check_out_date>=input$date1]
+    hotel_capture[, num:=1:.N,by =c("room_cat")]
+    return(hotel_capture)  
+})
+
+renderBubbles({
+  bubbles(1, capture()$room_type_code,color = capture()$color)
+})
+```
+
+
+
+-----------------------------------------------------------------------
+
+### Room Price and Demand
+
+```{r,cache=FALSE}
+
+renderPlot({
+  r<-price_demand[room_cat %in% input$room_cb]
+  r<-r[ymd>=ymd(input$daterange[1]) & ymd<=ymd(input$daterange[2])]
+  ggplot(r,aes(x=ymd))+
+    geom_line(aes(y=N/max(N),color="average price per night"))+
+    geom_line(aes(y=room_price_mean/max(room_price_mean),color="customers rate"))+
+    facet_grid(rows=vars(room_cat))+
+    scale_color_manual(name = "Colors", 
+                     values = c("average price per night" = "#009e8e", "customers rate" = "#4DB3E6"))+
+    theme(legend.position = "bottom")
+
+})
+```
+
+
+### predicted price
+
+```{r,cache=FALSE}
+renderDataTable({
+  sample<-as.h2o(data.frame("check_in_date"=c(as_date(input$checkin)),
+    "check_out_date"=c(as_date(input$checkout)),
+    "booking_date"=c(as_date(input$booking)),
+    "room_type_code"=c(input$roomtype),
+    "stay_duration"=input$stay))
+  merge(h2o.predict(price_model,sample),sample)
+})
+
+```
+
+
